@@ -14,14 +14,15 @@ set -euo pipefail
 #  - [major] or [breaking change] to bump major number
 # All keywords MUST be surrounded with square braces.
 #
-# Script uses git mechanisms for locking, so it can be used in parallel builds
-#
 # Requirements:
 #   - GIT_TOKEN variable set with GitHub token. Access level: repo.public_repo
 #   - docker
 #   - git-semver python package (pip install git-semver)
 
+#################
 # User variables
+#################
+
 : ${GIT_TOKEN:?}
 : ${GIT_REPOSITORY_TYPE:=github}
 : ${GIT_REMOTE:=$(git config --get remote.origin.url)}
@@ -31,7 +32,10 @@ set -euo pipefail
 : ${GIT_COMMIT_MESSAGE:=$(git rev-list --format=%B --max-count=1 ${GIT_COMMIT} | tail -n +2)}
 : ${GIT_DEFAULT_BRANCH:=master}
 
+###############
 # Parse remote
+###############
+
 [[ "${GIT_REMOTE}" =~ ^(([^:/]+)://)?(([^/:@]+)?(:([^/:@]+))?@)?([^~/:@]+)?(:(\d+))?:?(.*)/([^/]+\.git) ]] \
   || echo 1>&2 "Fatal: could not parse remote ${GIT_REMOTE}"
 
@@ -43,34 +47,34 @@ set -euo pipefail
 
 #######
 # Do same conditional tests that in .travis.yml
-# branch = master AND tag IS NOT present AND type != pull_request
+# branch = master AND type != pull_request
 #######
 
 [[ $(git branch --contains ${GIT_COMMIT} | grep " ${GIT_DEFAULT_BRANCH}$") ]] \
-  || { status=$?; echo 1>&2 "Fatal: $0 should only be launch on '${GIT_DEFAULT_BRANCH}' branch !"; exit 1; }
+  || { status=$?; echo 1>&2 "Fatal: $0 should only be launch on commit part of '${GIT_DEFAULT_BRANCH}' branch !"; exit 1; }
 
 GIT_TAGS=($(git tag --contains 2> /dev/null))
 [[ ! "${#GIT_TAGS[@]}" -ne 0 ]] \
-  || { echo 1>&2 "Fatal: should be run only on unreleased commit, but '$(printf "%s " ${GIT_TAGS[@]})' found !"; exit 1; }
+  || { echo 1>&2 "Commit '${GIT_COMMIT}' is already part of '$(printf "%s " ${GIT_TAGS[@]})' tag(s)."; exit 0; }
 
-#######
+#############
 # Git config
+#############
+
+git config user.name "${GIT_USER}"
+git config user.name "${GIT_EMAIL}"
+
 #######
-
-[[ -n "$(git config user.name)" ]] \
-  || git config user.name "${GIT_USER}"
-
-[[ -n "$(git config user.email)" ]] \
-  || git config user.name "${GIT_EMAIL}"
+# Tag generation
+#######
 
 GIT_TAG=none
 EXISTING_TAGS=($(git tag))
 
-# Generate TAG
 echo "Last commit message: ${GIT_COMMIT_MESSAGE}"
 case "${GIT_COMMIT_MESSAGE}" in
   *"[patch]"*|*"[fix]"* )
-    if [[ ${#EXISTING_TAGs[@]} -eq 0 ]];then
+    if [[ ${#EXISTING_TAGS[@]} -eq 0 ]];then
       GIT_TAG=0.0.1
     else
       GIT_TAG=$(git semver --next-patch)
@@ -96,7 +100,7 @@ case "${GIT_COMMIT_MESSAGE}" in
 esac
 
 ########
-# Generate the release
+# Changelog / Tag generation
 ########
 
 git checkout master
@@ -114,7 +118,7 @@ if [[ "${GIT_REPOSITORY_TYPE}" == "github" ]];then
                   --release-url "${GIT_RELEASE_URL}" --future-release "${GIT_TAG}" \
                   --unreleased-label "**Next release**" --no-compare-link
     git add CHANGELOG.md
-    git commit -m "Bump version to ${GIT_TAG} [ci skip]"
+    git commit -m "Bump version to ${GIT_TAG}"
     echo "Assigning new tag: ${GIT_TAG}"
     git tag "${GIT_TAG}" -a -m "Automatic tag generation"
     git push ${GIT_PUSH_URL} --follow-tags
