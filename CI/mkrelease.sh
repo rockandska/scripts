@@ -19,9 +19,9 @@ set -euo pipefail
 #   - docker
 #   - git-semver python package (pip install git-semver)
 
-#################
-# User variables
-#################
+##################
+# User variables #
+##################
 
 : ${GIT_TOKEN:?}
 : ${GIT_REPOSITORY_TYPE:=github}
@@ -32,12 +32,19 @@ set -euo pipefail
 : ${GIT_COMMIT_MESSAGE:=$(git rev-list --format=%B --max-count=1 ${GIT_COMMIT} | tail -n +2)}
 : ${GIT_DEFAULT_BRANCH:=master}
 
-###############
-# Parse remote
-###############
+###############################################
+# Skipping if commit is already part of a tag #
+###############################################
+GIT_TAGS=($(git tag --contains 2> /dev/null))
+[[ ! "${#GIT_TAGS[@]}" -ne 0 ]] \
+  || { echo 1>&2 "Commit '${GIT_COMMIT}' is already part of '$(printf "%s " ${GIT_TAGS[@]})'tag(s). Skipping...."; exit 0; }
 
-[[ "${GIT_REMOTE}" =~ ^(([^:/]+)://)?(([^/:@]+)?(:([^/:@]+))?@)?([^~/:@]+)?(:(\d+))?:?(.*)/([^/]+\.git) ]] \
-  || echo 1>&2 "Fatal: could not parse remote ${GIT_REMOTE}"
+################
+# Parse remote #
+################
+
+[[ "${GIT_REMOTE}" =~ ^(([^:/]+)://)?(([^/:@]+)?(:([^/:@]+))?@)?([^~/:@]+)?(:(\d+))?:?(.*)/([^/]+)/?$ ]] \
+  || { echo 1>&2 "Fatal: could not parse remote ${GIT_REMOTE}"; exit 1; }
 
 : ${GIT_DOMAIN:=${BASH_REMATCH[7]}}
 : ${GIT_PROTOCOL:=${BASH_REMATCH[2]}}
@@ -45,17 +52,17 @@ set -euo pipefail
 : ${GIT_NAMESPACE:=${GIT_URI}}
 : ${GIT_PROJECT:=${BASH_REMATCH[11]/.git}}
 
-#######
-# Do same conditional tests that in .travis.yml
-# branch = master AND type != pull_request
-#######
+#############################
+# Do some conditional tests #
+#############################
 
+# commit_message !~ /\[skip\]/
+[[ ! "${GIT_COMMIT_MESSAGE}" =~ .*(\[(ci skip|skip-mkrelease)\]).* ]] \
+  || { echo 1>&2 "Found ${BASH_REMATCH[1]} in commit message. Skipping....."; exit 0; }
+
+# branch = master
 [[ $(git branch --contains ${GIT_COMMIT} | grep " ${GIT_DEFAULT_BRANCH}$") ]] \
   || { status=$?; echo 1>&2 "Fatal: $0 should only be launch on commit part of '${GIT_DEFAULT_BRANCH}' branch !"; exit 1; }
-
-GIT_TAGS=($(git tag --contains 2> /dev/null))
-[[ ! "${#GIT_TAGS[@]}" -ne 0 ]] \
-  || { echo 1>&2 "Commit '${GIT_COMMIT}' is already part of '$(printf "%s " ${GIT_TAGS[@]})' tag(s)."; exit 0; }
 
 #############
 # Git config
@@ -103,29 +110,32 @@ esac
 # Changelog / Tag generation
 ########
 
-git checkout master
+git checkout ${GIT_DEFAULT_BRANCH}
 
 if [[ "${GIT_REPOSITORY_TYPE}" == "github" ]];then
   ############
   # GITHUB
   ############
   GIT_PUSH_URL="https://${GIT_TOKEN}:@github.com/${GIT_URI}/${GIT_PROJECT}.git"
+  GIT_RELEASE_URL="https://github.com/${GIT_NAMESPACE}/${GIT_PROJECT}/tree/%s"
   if [ "${GIT_TAG}" != "none" ]; then
     echo "Generate CHANGELOG.md for the release '${GIT_TAG}'"
-    GIT_RELEASE_URL="https://github.com/${GIT_NAMESPACE}/${GIT_PROJECT}/releases/tag/${GIT_TAG}"
     docker run -it --rm -v "$(pwd)":/usr/local/src/your-app ferrarimarco/github-changelog-generator:1.14.3 \
                   -u "${GIT_NAMESPACE}" -p "${GIT_PROJECT}" --token "${GIT_TOKEN}" \
                   --release-url "${GIT_RELEASE_URL}" --future-release "${GIT_TAG}" \
                   --unreleased-label "**Next release**" --no-compare-link
     git add CHANGELOG.md
-    git commit -m "Bump version to ${GIT_TAG}"
+    git commit -m "Bump version to ${GIT_TAG} [skip-mkrelease]"
     echo "Assigning new tag: ${GIT_TAG}"
     git tag "${GIT_TAG}" -a -m "Automatic tag generation"
-    git push ${GIT_PUSH_URL} --follow-tags
+    if ! git ls-remote --exit-code origin refs/tags/${GIT_TAG} 2> /dev/null;then
+      git push ${GIT_PUSH_URL} --follow-tags
+    else
+      { echo 1>&2 "Fatal: Tag '${GIT_TAG}' already exist on remote."; exit 1; }
+    fi
     echo "Version '${GIT_TAG}' pushed to '${GIT_NAMESPACE}/${GIT_PROJECT}'"
   else
     echo "Generate CHANGELOG.md for unreleased"
-    GIT_RELEASE_URL="https://github.com/${GIT_NAMESPACE}/${GIT_PROJECT}/tree/${GIT_DEFAULT_BRANCH}"
     docker run -it --rm -v "$(pwd)":/usr/local/src/your-app ferrarimarco/github-changelog-generator:1.14.3 \
                   -u "${GIT_NAMESPACE}" -p "${GIT_PROJECT}" --token "${GIT_TOKEN}" \
                   --release-url "${GIT_RELEASE_URL}" \

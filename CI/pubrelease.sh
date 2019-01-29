@@ -21,7 +21,7 @@ set -euo pipefail
 : ${GIT_DEFAULT_BRANCH:=master}
 
 # Parse remote
-[[ "${GIT_REMOTE}" =~ ^(([^:/]+)://)?(([^/:@]+)?(:([^/:@]+))?@)?([^~/:@]+)?(:(\d+))?:?(.*)/([^/]+\.git) ]] \
+[[ "${GIT_REMOTE}" =~ ^(([^:/]+)://)?(([^/:@]+)?(:([^/:@]+))?@)?([^~/:@]+)?(:(\d+))?:?(.*)/([^/]+)/?$ ]] \
   || echo 1>&2 "Fatal: could not parse remote ${GIT_REMOTE}"
 
 : ${GIT_DOMAIN:=${BASH_REMATCH[7]}}
