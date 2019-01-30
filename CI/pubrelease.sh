@@ -10,44 +10,53 @@ set -euo pipefail
 #   - docker
 #   - ansible if importing into galaxy (pip install ansible)
 
-# User variables
+##################
+# User variables #
+##################
+
 : ${GIT_TOKEN:?}
 : ${GIT_REPOSITORY_TYPE:=github}
-: ${GIT_REMOTE:=$(git config --get remote.origin.url)}
+: ${GIT_DEFAULT_BRANCH:=master}
 : ${GIT_EMAIL:=$(git show -s --format='%ae')}
 : ${GIT_USER:=$(git show -s --format='%an')}
-: ${GIT_COMMIT:=$(git rev-parse HEAD)}
-: ${GIT_COMMIT_MESSAGE:=$(git rev-list --format=%B --max-count=1 ${GIT_COMMIT} | tail -n +2)}
-: ${GIT_DEFAULT_BRANCH:=master}
+: ${SKIP_LABELS:=ci skip|skip}
 
-# Parse remote
-[[ "${GIT_REMOTE}" =~ ^(([^:/]+)://)?(([^/:@]+)?(:([^/:@]+))?@)?([^~/:@]+)?(:(\d+))?:?(.*)/([^/]+)/?$ ]] \
-  || echo 1>&2 "Fatal: could not parse remote ${GIT_REMOTE}"
+git_remote=$(git config --get remote.origin.url)
+git_commit=$(git rev-parse HEAD)
+git_commit_message=$(git rev-list --format=%B --max-count=1 ${git_commit} | tail -n +2)
 
-: ${GIT_DOMAIN:=${BASH_REMATCH[7]}}
-: ${GIT_PROTOCOL:=${BASH_REMATCH[2]}}
-: ${GIT_URI:=${BASH_REMATCH[10]#/}}
-: ${GIT_NAMESPACE:=${GIT_URI}}
-: ${GIT_PROJECT:=${BASH_REMATCH[11]/.git}}
+################
+# Parse remote #
+################
 
-#######
-# Do same conditional tests that in .travis.yml
-# branch = master AND tag IS present
-#######
+[[ "${git_remote}" =~ ^(([^:/]+)://)?(([^/:@]+)?(:([^/:@]+))?@)?([^~/:@]+)?(:(\d+))?:?(.*)/([^/]+)/?$ ]] \
+  || { >&2 echo "Fatal: could not parse remote ${git_remote}"; exit 1; }
 
-[[ $(git branch --contains ${GIT_COMMIT} | grep " ${GIT_DEFAULT_BRANCH}$") ]] \
-  || { status=$?; echo 1>&2 "Fatal: $0 should only be launch on '${GIT_DEFAULT_BRANCH}' branch !"; exit 1; }
+git_domain=${BASH_REMATCH[7]}
+git_protocol=${BASH_REMATCH[2]}
+git_uri=${BASH_REMATCH[10]#/}
+git_namespace=${git_uri}
+git_project=${BASH_REMATCH[11]/.git}
 
-GIT_CURRENT_TAG=$(git describe --exact-match 2> /dev/null || true)
-[[ -n "${GIT_CURRENT_TAG}" ]] \
-  || { echo 1>&2 "Fatal: should be run only on tagged commit, but no tag was found !"; exit 1; }
 
+#############################
+# Do some conditional tests #
+#############################
+
+# commit_message !~ /\[skip\]/
+[[ ! "${git_commit_message}" =~ .*(\[(${SKIP_LABELS})\]).* ]] \
+  || { >&2 echo "Found ${BASH_REMATCH[1]} in commit message. Skipping....."; exit 0; }
+
+# tagged commit
+git_current_tag=$(git describe --exact-match 2> /dev/null || true)
+[[ -n "${git_current_tag}" ]] \
+  || { >&2 echo "Fatal: should be run only on tagged commit, but no tag was found !"; exit 1; }
 
 while [[ $# -gt 0 ]];do
   key="$1"
   case $key in
       ansible-galaxy)
-        ANSIBLE_GALAXY=1
+        ansible_galaxy=1
         shift
       ;;
       *)
@@ -60,12 +69,12 @@ done
 # GITHUB
 ##########
 if [[ "${GIT_REPOSITORY_TYPE}" == "github" ]];then
-  echo "Sync changelog to github releases"
-  docker run -e CHANDLER_GITHUB_API_TOKEN="${GIT_TOKEN}" -v "$(pwd)":/chandler -ti whizark/chandler push "${GIT_CURRENT_TAG}"
+  >&2 echo "Sync changelog to github releases"
+  docker run -e CHANDLER_GITHUB_API_TOKEN="${GIT_TOKEN}" -v "$(pwd)":/chandler -ti whizark/chandler push "${git_current_tag}"
 
-  if [[ ${ANSIBLE_GALAXY:=0} -eq 1 ]];then
-    echo "Import role to galaxy"
+  if [[ ${ansible_galaxy:=0} -eq 1 ]];then
+    >&2 echo "Import role to galaxy"
     ansible-galaxy login --github-token="${GIT_TOKEN}"
-    ansible-galaxy import "${GIT_NAMESPACE}" "${GIT_PROJECT}"
+    ansible-galaxy import "${git_namespace}" "${git_project}"
   fi
 fi
