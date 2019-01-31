@@ -194,16 +194,16 @@ if [ "${git_tag2add}" != "" ]; then
   >&2 echo "${changelog_tag_msg}"
   git tag "${git_tag2add}" -a -m "${git_autotag_message}"
   if ! git ls-remote --exit-code origin refs/tags/${git_tag2add} 2> /dev/null;then
-    git push ${git_push_url} --follow-tags
+    [[ "${MKRELEASE_DUMMY:=0}" -eq 0 ]] && git push ${git_push_url} --follow-tags || true
   else
     >&2 echo "Fatal: Tag '${git_tag2add}' already exist on remote."
     exit 1
   fi
 else
-  git push ${git_push_url}
+  [[ "${MKRELEASE_DUMMY:=0}" -eq 0 ]] && git push ${git_push_url} || true
 fi
-
 git fetch
+git fetch --tags
 
 >&2 echo "${changelog_push_msg}"
 

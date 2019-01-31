@@ -9,6 +9,7 @@ set -euo pipefail
 #   - GIT_TOKEN variable set with GitHub token. Access level: repo.public_repo
 #   - docker
 #   - ansible if importing into galaxy (pip install ansible)
+#   - the repository to publish checkout on a tagged commit
 
 ##################
 # User variables #
@@ -65,11 +66,11 @@ done
 ##########
 if [[ "${GIT_REPOSITORY_TYPE}" == "github" ]];then
   >&2 echo "Sync changelog to github releases"
-  docker run -e CHANDLER_GITHUB_API_TOKEN="${GIT_TOKEN}" -v "$(pwd)":/chandler -ti whizark/chandler push "${git_current_tag}"
+  [[ "${PUBRELEASE_DUMMY:=0}" -eq 0 ]] && docker run -e CHANDLER_GITHUB_API_TOKEN="${GIT_TOKEN}" -v "$(pwd)":/chandler -ti whizark/chandler push "${git_current_tag}"
 
   if [[ ${ansible_galaxy:=0} -eq 1 ]];then
     >&2 echo "Import role to galaxy"
     ansible-galaxy login --github-token="${GIT_TOKEN}"
-    ansible-galaxy import "${git_namespace}" "${git_project}"
+    [[ "${PUBRELEASE_DUMMY:=0}" -eq 0 ]] && ansible-galaxy import "${git_namespace}" "${git_project}"
   fi
 fi
