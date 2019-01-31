@@ -173,7 +173,7 @@ if [[ "${GIT_REPOSITORY_TYPE}" == "github" ]];then
                 --release-url "${git_release_url}" ${changelog_opts} \
                 --unreleased-label "**Next release**" --no-compare-link
   git add CHANGELOG.md
-  git diff-index --quiet HEAD || git commit -m "${changelog_commit_msg}"
+  git commit --allow-empty -m "${changelog_commit_msg}"
 
 elif [[ "${GIT_REPOSITORY_TYPE}" == "gitlab" ]];then
   ##########
