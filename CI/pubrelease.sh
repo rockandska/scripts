@@ -19,7 +19,6 @@ set -euo pipefail
 : ${GIT_DEFAULT_BRANCH:=master}
 : ${GIT_EMAIL:=$(git show -s --format='%ae')}
 : ${GIT_USER:=$(git show -s --format='%an')}
-: ${SKIP_LABELS:=ci skip|skip}
 
 git_remote=$(git config --get remote.origin.url)
 git_commit=$(git rev-parse HEAD)
@@ -42,10 +41,6 @@ git_project=${BASH_REMATCH[11]/.git}
 #############################
 # Do some conditional tests #
 #############################
-
-# commit_message !~ /\[skip\]/
-[[ ! "${git_commit_message}" =~ .*(\[(${SKIP_LABELS})\]).* ]] \
-  || { >&2 echo "Found ${BASH_REMATCH[1]} in commit message. Skipping....."; exit 0; }
 
 # tagged commit
 git_current_tag=$(git describe --exact-match 2> /dev/null || true)
