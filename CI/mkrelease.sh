@@ -98,7 +98,7 @@ git_project=${BASH_REMATCH[11]/.git}
 ##############
 
 git config user.name "${GIT_USER}"
-git config user.name "${GIT_EMAIL}"
+git config user.email "${GIT_EMAIL}"
 
 ##################
 # Tag generation #
