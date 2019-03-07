@@ -1,5 +1,6 @@
 #!/bin/bash
 set -euo pipefail
+
 # Original script by Pawel Krupa (@paulfantom)
 # https://github.com/cloudalchemy/ansible-grafana/blob/7bb4a6f57740edfaeec24184f62d4b62035bbe58/.travis/releaser.sh
 # Update by rockandska
@@ -34,6 +35,9 @@ exec &> /dev/stderr
 ##################
 # User variables #
 ##################
+
+[[ -n ${MKRELEASE_DEBUG-} ]] && set -x
+: ${MKRELEASE_DUMMY:=}
 
 : ${GIT_TOKEN:=}
 : ${GIT_REPOSITORY_TYPE:=github}
@@ -140,7 +144,7 @@ if [ "${git_tag2add}" != "" ]; then
   changelog_tag_msg="Assigning new tag: ${git_tag2add}"
   changelog_commit_msg="Bump version to ${git_tag2add} [${SKIP_LABEL}]"
   changelog_push_msg="Version '${git_tag2add}' pushed to '${git_namespace}/${git_project}'"
-  changelog_opts="--future-release '${git_tag2add}'"
+  changelog_opts="--future-release=${git_tag2add}"
 else
   changelog_msg="Generate CHANGELOG.md for unreleased"
   changelog_tag_msg=''
@@ -150,7 +154,7 @@ else
 fi
 
 if [[ -n "${GIT_TOKEN}" ]];then
-  changelog_opts+=" --token ${GIT_TOKEN}"
+  changelog_opts+=" --token=${GIT_TOKEN}"
 fi
 
 ##############################
@@ -170,10 +174,19 @@ if [[ "${GIT_REPOSITORY_TYPE}" == "github" ]];then
   >&2 echo "${changelog_msg}"
   docker run -it --rm -v "$(pwd)":/usr/local/src/your-app ferrarimarco/github-changelog-generator:1.14.3 \
                 -u "${git_namespace}" -p "${git_project}" \
-                --release-url "${git_release_url}" ${changelog_opts} \
-                --unreleased-label "**Next release**" --no-compare-link
+                --release-url="${git_release_url}" ${changelog_opts} \
+                --unreleased-label="**Next release**" --no-compare-link
+  >&2 echo "Adding CHANGELOG.md"
   git add CHANGELOG.md
-  git commit --allow-empty -m "${changelog_commit_msg}"
+  >&2 echo -e "\nCheck additional lines added to the changelog :\n"
+  if git diff --unified=0 HEAD;then
+    if egrep -o "^## \['[0-9]\.[0-9]\.[0-9]'\]" CHANGELOG.md;then
+      >&2 echo -e "\nFatal: Found an entry with tag surrounded by ''\n"
+      exit 1
+    fi
+    >&2 echo "Commit CHANGELOG.md"
+    git commit --allow-empty -m "${changelog_commit_msg}"
+  fi
 
 elif [[ "${GIT_REPOSITORY_TYPE}" == "gitlab" ]];then
   ##########
@@ -194,16 +207,14 @@ if [ "${git_tag2add}" != "" ]; then
   >&2 echo "${changelog_tag_msg}"
   git tag "${git_tag2add}" -a -m "${git_autotag_message}"
   if ! git ls-remote --exit-code origin refs/tags/${git_tag2add} 2> /dev/null;then
-    [[ "${MKRELEASE_DUMMY:=0}" -eq 0 ]] && git push ${git_push_url} --follow-tags || true
+    [[ "${MKRELEASE_DUMMY}" -eq 0 ]] && git push ${git_push_url} --follow-tags || true
   else
     >&2 echo "Fatal: Tag '${git_tag2add}' already exist on remote."
     exit 1
   fi
 else
-  [[ "${MKRELEASE_DUMMY:=0}" -eq 0 ]] && git push ${git_push_url} || true
+  [[ "${MKRELEASE_DUMMY}" -eq 0 ]] && git push ${git_push_url} || true
 fi
-git fetch
-git fetch --tags
 
 >&2 echo "${changelog_push_msg}"
 
