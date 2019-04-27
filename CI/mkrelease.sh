@@ -192,7 +192,7 @@ if [[ "${GIT_REPOSITORY_TYPE}" == "github" ]];then
       exit 1
     fi
     >&2 echo "Commit CHANGELOG.md"
-    git commit --allow-empty -m "${changelog_commit_msg}"
+    git commit -m "${changelog_commit_msg}" 2> /dev/null || true
   fi
 
 elif [[ "${GIT_REPOSITORY_TYPE}" == "gitlab" ]];then
