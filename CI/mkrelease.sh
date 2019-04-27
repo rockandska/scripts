@@ -104,6 +104,14 @@ git_project=${BASH_REMATCH[11]/.git}
 git config user.name "${GIT_USER}"
 git config user.email "${GIT_EMAIL}"
 
+if [[ "${GIT_REPOSITORY_TYPE}" == "github" ]];then
+  git_push_url="https://${GIT_TOKEN}:@github.com/${git_uri}/${git_project}.git"
+  git remote add origin "${git_push_url}"
+elif [[ "${GIT_REPOSITORY_TYPE}" == "gitlab" ]];then
+  git_push_url="${git_protocol}://oauth2:${GIT_TOKEN}@${git_domain}/${git_uri}/${git_project}.git"
+  git remote add origin "${git_push_url}"
+fi
+
 ##################
 # Tag generation #
 ##################
@@ -168,7 +176,6 @@ if [[ "${GIT_REPOSITORY_TYPE}" == "github" ]];then
   # GITHUB #
   ##########
 
-  git_push_url="https://${GIT_TOKEN}:@github.com/${git_uri}/${git_project}.git"
   git_release_url="https://github.com/${git_namespace}/${git_project}/tree/%s"
 
   >&2 echo "${changelog_msg}"
@@ -189,12 +196,7 @@ if [[ "${GIT_REPOSITORY_TYPE}" == "github" ]];then
   fi
 
 elif [[ "${GIT_REPOSITORY_TYPE}" == "gitlab" ]];then
-  ##########
-  # GITLAB #
-  ##########
-
-  git_push_url="${git_protocol}://oauth2:${GIT_TOKEN}@${git_domain}/${git_uri}/${git_project}.git"
-
+  :
 else
   >&2 echo "Git repository type ('${GIT_REPOSITORY_TYPE}') is not recognized"
   exit 1
@@ -207,13 +209,13 @@ if [ "${git_tag2add}" != "" ]; then
   >&2 echo "${changelog_tag_msg}"
   git tag "${git_tag2add}" -a -m "${git_autotag_message}"
   if ! git ls-remote --exit-code origin refs/tags/${git_tag2add} 2> /dev/null;then
-    [[ "${MKRELEASE_DUMMY}" -eq 0 ]] && git push ${git_push_url} --follow-tags || true
+    [[ "${MKRELEASE_DUMMY}" -eq 0 ]] && git push origin --follow-tags || true
   else
     >&2 echo "Fatal: Tag '${git_tag2add}' already exist on remote."
     exit 1
   fi
 else
-  [[ "${MKRELEASE_DUMMY}" -eq 0 ]] && git push ${git_push_url} || true
+  [[ "${MKRELEASE_DUMMY}" -eq 0 ]] && git push origin || true
 fi
 
 >&2 echo "${changelog_push_msg}"
