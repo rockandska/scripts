@@ -186,7 +186,7 @@ if [[ "${GIT_REPOSITORY_TYPE}" == "github" ]];then
   >&2 echo "Adding CHANGELOG.md"
   git add CHANGELOG.md
   >&2 echo -e "\nCheck additional lines added to the changelog :\n"
-  if git diff --unified=0 HEAD;then
+  if git diff --no-pager --unified=0 HEAD &> /dev/null;then
     if egrep -o "^## \['[0-9]\.[0-9]\.[0-9]'\]" CHANGELOG.md;then
       >&2 echo -e "\nFatal: Found an entry with tag surrounded by ''\n"
       exit 1
