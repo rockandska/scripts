@@ -16,9 +16,11 @@ set -euo pipefail
 # All keywords MUST be surrounded with square braces.
 #
 # Requirements:
-#   - GIT_TOKEN variable set with GitHub token. Access level: repo.public_repo
-#   - docker
-#   - git-semver python package (pip install git-semver)
+#   Softwares:
+#     - Git
+#     - Docker
+#   Env variables:
+#     - GIT_TOKEN: variable set with GitHub token. Access level: repo.public_repo
 #
 # Output:
 # - stdout:
@@ -46,6 +48,8 @@ exec &> /dev/stderr
 : ${GIT_USER:=$(git show -s --format='%an')}
 : ${SKIP_LABEL:=ci skip}
 : ${SKIP_LABELS:=ci skip|skip}
+: ${SEMVER_DOCKER_VERSION:=5.5.0}
+: ${CHANGELOG_GENERATOR_DOCKER_VERSION:=1.14.3}
 
 git_remote=$(git config --get remote.origin.url)
 git_commit=$(git rev-parse HEAD)
@@ -109,30 +113,19 @@ git config user.email "${GIT_EMAIL}"
 ##################
 
 git_tag2add=''
-git_tags_exists_arr=($(git tag))
+git_last_tag="$(git describe --tags --abbrev=0 2> /dev/null || true)"
+: ${git_last_tag:=0.0.0}
 
 >&2 echo "Last commit message: ${git_commit_message}"
 case "${git_commit_message}" in
   *"[patch]"*|*"[fix]"* )
-    if [[ ${#git_tags_exists_arr[@]} -eq 0 ]];then
-      git_tag2add=0.0.1
-    else
-      git_tag2add=$(git semver --next-patch)
-    fi
+    git_tag2add="$(docker run --rm marcelocorreia/semver:${SEMVER_DOCKER_VERSION} semver -c -i patch ${git_last_tag})"
     ;;
   *"[minor]"*|*"[feat]"*|*"[feature]"* )
-    if [[ ${#git_tags_exists_arr[@]} -eq 0 ]];then
-      git_tag2add=0.1.0
-    else
-      git_tag2add=$(git semver --next-minor)
-    fi
+    git_tag2add="$(docker run --rm marcelocorreia/semver:${SEMVER_DOCKER_VERSION} semver -c -i minor ${git_last_tag})"
     ;;
   *"[major]"*|*"[breaking change]"* )
-    if [[ ${#git_tags_exists_arr[@]} -eq 0 ]];then
-      git_tag2add=1.0.0
-    else
-      git_tag2add=$(git semver --next-major)
-    fi
+    git_tag2add="$(docker run --rm marcelocorreia/semver:${SEMVER_DOCKER_VERSION} semver -c -i major ${git_last_tag})"
     ;;
   *)
     >&2 echo "Keyword not detected. Doing nothing"
@@ -172,14 +165,14 @@ if [[ "${GIT_REPOSITORY_TYPE}" == "github" ]];then
   git_release_url="https://github.com/${git_namespace}/${git_project}/tree/%s"
 
   >&2 echo "${changelog_msg}"
-  docker run -it --rm -v "$(pwd)":/usr/local/src/your-app ferrarimarco/github-changelog-generator:1.14.3 \
+  docker run -it --rm -v "$(pwd)":/usr/local/src/your-app ferrarimarco/github-changelog-generator:${CHANGELOG_GENERATOR_DOCKER_VERSION} \
                 -u "${git_namespace}" -p "${git_project}" \
                 --release-url="${git_release_url}" ${changelog_opts} \
                 --unreleased-label="**Next release**" --no-compare-link
   >&2 echo "Adding CHANGELOG.md"
   git add CHANGELOG.md
   >&2 echo -e "\nCheck additional lines added to the changelog :\n"
-  if git diff --unified=0 HEAD;then
+  if git --no-pager diff --unified=0 HEAD;then
     if egrep -o "^## \['[0-9]\.[0-9]\.[0-9]'\]" CHANGELOG.md;then
       >&2 echo -e "\nFatal: Found an entry with tag surrounded by ''\n"
       exit 1
@@ -207,13 +200,17 @@ if [ "${git_tag2add}" != "" ]; then
   >&2 echo "${changelog_tag_msg}"
   git tag "${git_tag2add}" -a -m "${git_autotag_message}"
   if ! git ls-remote --exit-code origin refs/tags/${git_tag2add} 2> /dev/null;then
-    [[ "${MKRELEASE_DUMMY}" -eq 0 ]] && git push ${git_push_url} --follow-tags || true
+    if [[ "${MKRELEASE_DUMMY}" -eq 0 ]];then
+      git push ${git_push_url} --follow-tags
+    fi
   else
     >&2 echo "Fatal: Tag '${git_tag2add}' already exist on remote."
     exit 1
   fi
 else
-  [[ "${MKRELEASE_DUMMY}" -eq 0 ]] && git push ${git_push_url} || true
+  if [[ "${MKRELEASE_DUMMY}" -eq 0 ]];then
+    git push ${git_push_url}
+  fi
 fi
 
 >&2 echo "${changelog_push_msg}"
